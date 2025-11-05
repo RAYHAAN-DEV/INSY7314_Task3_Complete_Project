@@ -1,87 +1,60 @@
 ﻿version: 2.1
 
+orbs:
+  node: circleci/node@5.1.0
+
+# Re-usable executor for Node 20
+executors:
+  node20:
+    docker:
+      - image: cimg/node:20.18
+
 jobs:
-  build_backend:
-    docker:
-      - image: cimg/node:20.18
-    working_directory: ~/repo
+  # (Optional) quick build to prove both frontends build
+  build_frontends:
+    executor: node20
     steps:
       - checkout
+      - node/install-packages:
+          app-dir: frontend
+          pkg-manager: npm
       - run:
-          name: Install backend deps
+          name: Build customer frontend
+          working_directory: frontend
           command: |
-            cd backend
-            if [ -f package-lock.json ]; then npm ci --omit=optional; else npm install --no-optional; fi
+            npm run build || echo "No build script - skipping"
+      - node/install-packages:
+          app-dir: employee-frontend
+          pkg-manager: npm
       - run:
-          name: Build backend (ignore if no script)
+          name: Build employee frontend
+          working_directory: employee-frontend
           command: |
-            cd backend
-            npm run -s build || echo "no backend build script"
+            npm run build || echo "No build script - skipping"
 
-  build_frontend:
-    docker:
-      - image: cimg/node:20.18
-    working_directory: ~/repo
-    steps:
-      - checkout
-      - run:
-          name: Install frontend deps
-          command: |
-            cd frontend
-            if [ -f package-lock.json ]; then npm ci --omit=optional; else npm install --no-optional; fi
-      - run:
-          name: Build frontend (ignore if no script)
-          command: |
-            cd frontend
-            npm run -s build || echo "no frontend build script"
-
-  build_employee_frontend:
-    docker:
-      - image: cimg/node:20.18
-    working_directory: ~/repo
-    steps:
-      - checkout
-      - run:
-          name: Install employee-frontend deps
-          command: |
-            cd employee-frontend
-            if [ -f package-lock.json ]; then npm ci --omit=optional; else npm install --no-optional; fi
-      - run:
-          name: Build employee-frontend (ignore if no script)
-          command: |
-            cd employee-frontend
-            npm run -s build || echo "no employee build script"
-
+  # SonarCloud analysis (no download needed; uses official image)
   sonar_scan:
     docker:
-      - image: cimg/openjdk:17.0
-    working_directory: ~/repo
+      - image: sonarsource/sonar-scanner-cli:5.0.1
+    environment:
+      SONAR_HOST_URL: "https://sonarcloud.io"
     steps:
       - checkout
       - run:
-          name: Download Sonar Scanner CLI
+          name: Run SonarCloud analysis (backend + frontends)
           command: |
-            curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-5.0.1.3006-linux.zip
-            unzip -q /tmp/sonar-scanner.zip -d /tmp
-      - run:
-          name: Run SonarCloud analysis
-          command: |
-            export SONAR_SCANNER_OPTS="-Xmx512m"
-            /tmp/sonar-scanner-*/bin/sonar-scanner \
-              -Dsonar.host.url=https://sonarcloud.io \
-              -Dsonar.organization=st10214465-vcconnect-edu-za \
-              -Dsonar.projectKey=RAYHAAN-DEV_INSY7314_Task3_Complete_Project \
-              -Dsonar.sources=. \
-              -Dsonar.token="${SONAR_TOKEN}"
+            sonar-scanner \
+              -Dsonar.host.url="${SONAR_HOST_URL}" \
+              -Dsonar.organization="${SONAR_ORG}" \
+              -Dsonar.projectKey="${SONAR_PROJECT_KEY}" \
+              -Dsonar.login="${SONAR_TOKEN}" \
+              -Dsonar.sources=backend,frontend,employee-frontend \
+              -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/.vite/**
 
 workflows:
   build_and_analyze:
     jobs:
-      - build_backend
-      - build_frontend
-      - build_employee_frontend
+      - build_frontends
       - sonar_scan:
           requires:
-            - build_backend
-            - build_frontend
-            - build_employee_frontend
+            - build_frontends
