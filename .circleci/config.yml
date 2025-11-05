@@ -1,0 +1,28 @@
+﻿version: 2.1
+
+jobs:
+  scan:
+    docker:
+      - image: cimg/node:20.18
+    steps:
+      - checkout
+      - run:
+          name: npm audit (Security Scan)
+          command: |
+            if [ -d backend ]; then cd backend && npm ci && npm audit --audit-level=high || true; cd ..; fi
+            if [ -d frontend ]; then cd frontend && npm ci && npm audit --audit-level=high || true; cd ..; fi
+            if [ -d employee-frontend ]; then cd employee-frontend && npm ci && npm audit --audit-level=high || true; cd ..; fi
+      - run:
+          name: SonarCloud Scan
+          command: |
+            npm i -g sonarqube-scanner
+            npx sonarqube-scanner \
+              -Dsonar.projectBaseDir=. \
+              -Dsonar.host.url="${SONAR_HOST_URL}" \
+              -Dsonar.login="${SONAR_TOKEN}"
+
+workflows:
+  version: 2
+  build-and-scan:
+    jobs:
+      - scan
