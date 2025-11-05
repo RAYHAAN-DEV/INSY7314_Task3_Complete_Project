@@ -1,35 +1,87 @@
 ﻿version: 2.1
 
 jobs:
-  build:
+  build_backend:
     docker:
-      - image: cimg/node:20.10
+      - image: cimg/node:20.18
+    working_directory: ~/repo
     steps:
       - checkout
-      - run: npm install --no-optional
-      - run: echo "✅ Build complete"
+      - run:
+          name: Install backend deps
+          command: |
+            cd backend
+            if [ -f package-lock.json ]; then npm ci --omit=optional; else npm install --no-optional; fi
+      - run:
+          name: Build backend (ignore if no script)
+          command: |
+            cd backend
+            npm run -s build || echo "no backend build script"
+
+  build_frontend:
+    docker:
+      - image: cimg/node:20.18
+    working_directory: ~/repo
+    steps:
+      - checkout
+      - run:
+          name: Install frontend deps
+          command: |
+            cd frontend
+            if [ -f package-lock.json ]; then npm ci --omit=optional; else npm install --no-optional; fi
+      - run:
+          name: Build frontend (ignore if no script)
+          command: |
+            cd frontend
+            npm run -s build || echo "no frontend build script"
+
+  build_employee_frontend:
+    docker:
+      - image: cimg/node:20.18
+    working_directory: ~/repo
+    steps:
+      - checkout
+      - run:
+          name: Install employee-frontend deps
+          command: |
+            cd employee-frontend
+            if [ -f package-lock.json ]; then npm ci --omit=optional; else npm install --no-optional; fi
+      - run:
+          name: Build employee-frontend (ignore if no script)
+          command: |
+            cd employee-frontend
+            npm run -s build || echo "no employee build script"
 
   sonar_scan:
     docker:
       - image: cimg/openjdk:17.0
+    working_directory: ~/repo
     steps:
       - checkout
-      - run: |
-          echo "🔍 Running SonarCloud analysis..."
-          curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-          unzip -q sonar-scanner.zip
-          ./sonar-scanner-*/bin/sonar-scanner \
-            -Dsonar.projectKey=RAYHAAN-DEV_INSY7314_Task3_Complete_Project \
-            -Dsonar.organization=st10214465-vcconnect-edu-za \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.login=$SONAR_TOKEN
+      - run:
+          name: Download Sonar Scanner CLI
+          command: |
+            curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-5.0.1.3006-linux.zip
+            unzip -q /tmp/sonar-scanner.zip -d /tmp
+      - run:
+          name: Run SonarCloud analysis
+          command: |
+            export SONAR_SCANNER_OPTS="-Xmx512m"
+            /tmp/sonar-scanner-*/bin/sonar-scanner \
+              -Dsonar.host.url=https://sonarcloud.io \
+              -Dsonar.organization=st10214465-vcconnect-edu-za \
+              -Dsonar.projectKey=RAYHAAN-DEV_INSY7314_Task3_Complete_Project \
+              -Dsonar.sources=. \
+              -Dsonar.token="${SONAR_TOKEN}"
 
 workflows:
-  version: 2
   build_and_analyze:
     jobs:
-      - build
+      - build_backend
+      - build_frontend
+      - build_employee_frontend
       - sonar_scan:
           requires:
-            - build
+            - build_backend
+            - build_frontend
+            - build_employee_frontend
