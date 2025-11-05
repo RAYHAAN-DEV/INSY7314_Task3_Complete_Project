@@ -1,28 +1,35 @@
 ﻿version: 2.1
 
 jobs:
-  scan:
+  build:
     docker:
-      - image: cimg/node:20.18
+      - image: cimg/node:20.10
     steps:
       - checkout
-      - run:
-          name: npm audit (Security Scan)
-          command: |
-            if [ -d backend ]; then cd backend && npm ci && npm audit --audit-level=high || true; cd ..; fi
-            if [ -d frontend ]; then cd frontend && npm ci && npm audit --audit-level=high || true; cd ..; fi
-            if [ -d employee-frontend ]; then cd employee-frontend && npm ci && npm audit --audit-level=high || true; cd ..; fi
-      - run:
-          name: SonarCloud Scan
-          command: |
-            npm i -g sonarqube-scanner
-            npx sonarqube-scanner \
-              -Dsonar.projectBaseDir=. \
-              -Dsonar.host.url="${SONAR_HOST_URL}" \
-              -Dsonar.login="${SONAR_TOKEN}"
+      - run: npm install --no-optional
+      - run: echo "✅ Build complete"
+
+  sonar_scan:
+    docker:
+      - image: cimg/openjdk:17.0
+    steps:
+      - checkout
+      - run: |
+          echo "🔍 Running SonarCloud analysis..."
+          curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+          unzip -q sonar-scanner.zip
+          ./sonar-scanner-*/bin/sonar-scanner \
+            -Dsonar.projectKey=RAYHAAN-DEV_INSY7314_Task3_Complete_Project \
+            -Dsonar.organization=st10214465-vcconnect-edu-za \
+            -Dsonar.sources=. \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.login=$SONAR_TOKEN
 
 workflows:
   version: 2
-  build-and-scan:
+  build_and_analyze:
     jobs:
-      - scan
+      - build
+      - sonar_scan:
+          requires:
+            - build
