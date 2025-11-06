@@ -1,60 +1,63 @@
 ﻿version: 2.1
 
-orbs:
-  node: circleci/node@5.1.0
-
-# Re-usable executor for Node 20
-executors:
-  node20:
+jobs:
+  build_and_analyze:
     docker:
       - image: cimg/node:20.18
-
-jobs:
-  # (Optional) quick build to prove both frontends build
-  build_frontends:
-    executor: node20
     steps:
       - checkout
-      - node/install-packages:
-          app-dir: frontend
-          pkg-manager: npm
-      - run:
-          name: Build customer frontend
-          working_directory: frontend
-          command: |
-            npm run build || echo "No build script - skipping"
-      - node/install-packages:
-          app-dir: employee-frontend
-          pkg-manager: npm
-      - run:
-          name: Build employee frontend
-          working_directory: employee-frontend
-          command: |
-            npm run build || echo "No build script - skipping"
 
-  # SonarCloud analysis (no download needed; uses official image)
-  sonar_scan:
-    docker:
-      - image: sonarsource/sonar-scanner-cli:5.0.1
-    environment:
-      SONAR_HOST_URL: "https://sonarcloud.io"
-    steps:
-      - checkout
+      # 🧠 Step 1: Install dependencies for both backend and frontend
+      - run:
+          name: Install dependencies
+          command: |
+            echo "📦 Installing dependencies..."
+            cd backend && npm install --no-optional
+            cd ../frontend && npm install --no-optional
+
+      # ✅ Step 2: Verify environment variables before Sonar scan
+      - run:
+          name: Verify SonarCloud environment variables
+          command: |
+            if [ -z "$SONAR_TOKEN" ]; then
+              echo "❌ SONAR_TOKEN missing! Please add it in CircleCI > Project Settings > Environment Variables."
+              exit 1
+            fi
+            if [ -z "$SONAR_ORG" ]; then
+              echo "❌ SONAR_ORG missing! Please add it (e.g. rayhaan-dev)."
+              exit 1
+            fi
+            if [ -z "$SONAR_PROJECT_KEY" ]; then
+              echo "❌ SONAR_PROJECT_KEY missing! Please add it (e.g. RAYHAAN-DEV_INSY7314_Task3_Complete_Project)."
+              exit 1
+            fi
+            echo "✅ Environment variables detected successfully."
+
+      # 🚀 Step 3: Install Sonar Scanner CLI
+      - run:
+          name: Install SonarCloud Scanner
+          command: |
+            echo "⬇️ Downloading Sonar Scanner CLI..."
+            curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+            unzip -q /tmp/sonar-scanner.zip -d /tmp
+            export PATH="/tmp/sonar-scanner-5.0.1.3006-linux/bin:$PATH"
+
+      # 🔍 Step 4: Run SonarCloud Analysis
       - run:
           name: Run SonarCloud analysis (backend + frontends)
           command: |
-            sonar-scanner \
-              -Dsonar.host.url="${SONAR_HOST_URL}" \
-              -Dsonar.organization="${SONAR_ORG}" \
-              -Dsonar.projectKey="${SONAR_PROJECT_KEY}" \
-              -Dsonar.login="${SONAR_TOKEN}" \
-              -Dsonar.sources=backend,frontend,employee-frontend \
-              -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/.vite/**
+            echo "🧠 Running SonarCloud scan..."
+            /tmp/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+              -Dsonar.host.url="https://sonarcloud.io" \
+              -Dsonar.login="$SONAR_TOKEN" \
+              -Dsonar.organization="$SONAR_ORG" \
+              -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
+              -Dsonar.projectName="INSY7314_Task3_Complete_Project" \
+              -Dsonar.sources="backend,frontend" \
+              -Dsonar.exclusions="**/node_modules/**,**/dist/**"
 
 workflows:
-  build_and_analyze:
+  version: 2
+  build_and_scan:
     jobs:
-      - build_frontends
-      - sonar_scan:
-          requires:
-            - build_frontends
+      - build_and_analyze
